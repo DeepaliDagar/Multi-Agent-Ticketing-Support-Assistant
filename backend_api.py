@@ -20,7 +20,7 @@ CORS(app, resources={
     r"/*": {
         "origins": [
             "http://localhost:3000",  # Local development
-            "https://multi-agent-ticketing-support-assistant-axqzj49qd.vercel.app"  # Your Vercel deployment
+            "https://multi-agent-ticketing-support-assistant-owbjxb8q1.vercel.app"  # Your Vercel deployment
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["*"],
