@@ -14,7 +14,20 @@ from a2a.langgraph_orchestrator import LangGraphOrchestrator
 from a2a.a2a_logger import get_a2a_logger
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+
+# Configure CORS for Vercel frontend
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",  # Local development
+            "https://multi-agent-ticketing-support-assistant-axqzj49qd.vercel.app",  # Your Vercel URL
+            "https://*.vercel.app"  # All Vercel preview deployments
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": True
+    }
+})
 
 # Initialize orchestrator
 print(" Initializing A2A-MCP orchestrator...")
