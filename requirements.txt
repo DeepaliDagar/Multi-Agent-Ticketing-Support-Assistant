@@ -1,0 +1,28 @@
+# OpenAI SDK (for LLM agents)
+openai>=1.50.0
+
+# Environment & Configuration
+python-dotenv>=1.0.0
+
+# Data Validation & Utilities
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+
+# Type Checking
+typing-extensions>=4.12.0
+
+# LangGraph for orchestration
+langgraph>=0.2.0
+langchain-core>=0.3.0
+
+# Flask API for React UI
+flask>=3.0.0
+flask-cors>=4.0.0
+
+
+# Architecture Notes:
+# -------------------
+# - Agents use MCP CLIENT (a2a/mcp_client.py) to discover tools dynamically
+# - MCP Server (customer_mcp/server/mcp_server.py) exposes tools via STDIO
+# - A2A coordination: agents can call other_agents for help
+# - All communication through MCP protocol for flexibility
