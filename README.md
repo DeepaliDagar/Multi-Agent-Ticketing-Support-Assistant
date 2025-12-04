@@ -7,12 +7,12 @@
 
 A production-ready multi-agent customer support system featuring LangGraph orchestration, dynamic MCP tool discovery, intelligent A2A coordination, and React UI.
 
-## ✨ Key Features
+## Key Features
 
 - **LangGraph Orchestration** - Stateful workflow management with conversation memory
 - ** Agent-to-Agent (A2A) Coordination** - Agents intelligently collaborate
 - **Dynamic MCP Tool Discovery** - No hardcoded tool definitions
-- **Intelligent Priority Assignment** - LLM-based ticket priority determination
+- **Priority Assignment** - LLM-based ticket priority determination
 - **Optimized Performance** - Database connection pooling and WAL mode
 - **React UI** 
 - **SQLite Database** - Customer and ticket management
@@ -72,7 +72,7 @@ Frontend opens at: `http://localhost:3000`
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 A2A-MCP/
@@ -128,7 +128,7 @@ A2A-MCP/
 
 ---
 
-## 🤖 Agent Architecture
+## Agent Architecture
 
 ### 1. Router Agent
 **Entry point for all queries**
@@ -266,7 +266,7 @@ All A2A communication is logged to `a2a_communication_log.json`:
 
 ---
 
-## ⚡ Performance Optimizations
+## Performance Optimizations
 
 ### Database Connection Optimization
 
@@ -299,9 +299,9 @@ def get_db_connection():
 ```
 
 **Benefits:**
-- ✅ 30-40% faster queries
-- ✅ Better concurrency with WAL mode
-- ✅ Reduced database locks
+- 30-40% faster queries
+- Better concurrency with WAL mode
+- Reduced database locks
 
 ### Retry Logic for Database Operations
 
@@ -634,7 +634,7 @@ MCP_TOOLS_REGISTRY = {
 
 ---
 
-## 🚀 What This Project Demonstrates
+## What This Project Demonstrates
 
 ### Enterprise AI Patterns
 
@@ -643,15 +643,15 @@ MCP_TOOLS_REGISTRY = {
 -  **Stateful orchestration** - LangGraph for workflow management
 -  **Conversation memory** - Multi-turn context preservation
 -  **Performance optimization** - Database connection pooling, WAL mode
--  **Intelligent decision making** - LLM-based priority assignment
+-  **decision making** - LLM-based priority assignment
 -  **Error handling** - Retry logic, graceful degradation
 -  **Full-stack implementation** - React UI + Flask backend
 -  **Production-ready** - Logging, testing, error handling
 
-### Advanced Features
+### Features
 
 1. **A2A Coordination** - Agents decide when to collaborate
-2. **Smart Priority Assignment** - Context-aware ticket prioritization
+2. **Priority Assignment** - Context-aware ticket prioritization
 3. **SQL Generation** - Natural language to SQL with safety checks
 4. **Parallel Execution** - LangGraph manages concurrent operations
 5. **Observable System** - Full logging and tracing

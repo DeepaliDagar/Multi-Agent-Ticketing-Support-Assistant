@@ -1,16 +1,6 @@
-# A2A-MCP Chatbot UI
+# Chatbot UI
 
-Beautiful, modern chatbot interface for the A2A-MCP Multi-Agent System.
-
-## Features
-
-- **Real-time Chat Interface** - Beautiful, responsive design
-- **Modern UI/UX** - Gradient backgrounds, smooth animations
-- **A2A Visualization** - See agent-to-agent coordination
-- **Mobile Responsive** - Works on all devices
-- **Quick Examples** - Pre-built queries to get started
-- **Agent Indicators** - Know which agent is responding
-- **Activity Sidebar** - Track A2A interactions
+Chatbot interface for the A2A-MCP Multi-Agent System.
 
 ## Quick Start
 
@@ -216,6 +206,9 @@ npm install
 - [React Documentation](https://reactjs.org/)
 - [Create React App](https://create-react-app.dev/)
 - [A2A-MCP Backend](../README.md)
+
+## Resources used 
+This UI was created with help of cursor
 
 ## License
 
