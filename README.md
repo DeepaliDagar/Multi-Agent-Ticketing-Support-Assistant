@@ -128,7 +128,7 @@ A2A-MCP/
 
 ---
 
-## 🤖 Agent Architecture
+## Agent Architecture
 
 ### 1. Router Agent
 **Entry point for all queries**
