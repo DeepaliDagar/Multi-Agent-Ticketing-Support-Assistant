@@ -29,22 +29,57 @@ CORS(app, resources={
     }
 })
 
-# Initialize orchestrator
-print(" Initializing A2A-MCP orchestrator...")
-orchestrator = LangGraphOrchestrator()
-print("Orchestrator ready!")
-
 # Store conversation threads
 conversation_threads = {}
+
+# Lazy-load orchestrator to handle initialization errors gracefully
+orchestrator = None
+orchestrator_error = None
+
+def get_orchestrator():
+    """Get or initialize the orchestrator with error handling."""
+    global orchestrator, orchestrator_error
+    if orchestrator is None and orchestrator_error is None:
+        try:
+            print("🔄 Initializing A2A-MCP orchestrator...")
+            orchestrator = LangGraphOrchestrator()
+            print("✅ Orchestrator ready!")
+        except Exception as e:
+            print(f"❌ Failed to initialize orchestrator: {e}")
+            import traceback
+            traceback.print_exc()
+            orchestrator_error = str(e)
+    return orchestrator, orchestrator_error
+
+# Initialize orchestrator on startup (but don't crash if it fails)
+print("🚀 Starting A2A-MCP Backend API...")
+get_orchestrator()  # Try to initialize early, but app will still start if it fails
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint - simple test"""
+    return jsonify({
+        'message': 'A2A-MCP Backend API is running',
+        'endpoints': {
+            'health': '/health',
+            'chat': '/chat (POST)',
+            'logs': '/a2a/logs (GET)'
+        }
+    })
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({
+    orch, error = get_orchestrator()
+    status = {
         'status': 'ok',
         'service': 'A2A-MCP Backend',
-        'version': '1.0.0'
-    })
+        'version': '1.0.0',
+        'orchestrator': 'ready' if orch else 'error',
+    }
+    if error:
+        status['orchestrator_error'] = error
+    return jsonify(status)
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -77,8 +112,16 @@ def chat():
         print(f"\n📨 Received message: {user_message}")
         print(f"   Thread ID: {thread_id}")
         
+        # Get orchestrator (lazy load)
+        orch, error = get_orchestrator()
+        if error:
+            return jsonify({
+                'error': f'Orchestrator initialization failed: {error}',
+                'response': 'Backend is not properly initialized. Please check server logs.'
+            }), 500
+        
         # Process with orchestrator
-        result = orchestrator.process(user_message, thread_id=thread_id)
+        result = orch.process(user_message, thread_id=thread_id)
         
         # Get A2A summary
         a2a_logger = get_a2a_logger()
@@ -109,6 +152,9 @@ def chat():
 def get_a2a_logs():
     """Get A2A communication logs"""
     try:
+        orch, error = get_orchestrator()
+        if error:
+            return jsonify({'error': f'Orchestrator not initialized: {error}', 'logs': []}), 500
         a2a_logger = get_a2a_logger()
         summary = a2a_logger.get_summary()
         return jsonify(summary)
