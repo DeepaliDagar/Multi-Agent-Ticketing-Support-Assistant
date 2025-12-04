@@ -15,12 +15,15 @@ from a2a.a2a_logger import get_a2a_logger
 
 app = Flask(__name__)
 
-# Configure CORS - Allow all origins for development and deployment
+# 🔹 Configure CORS for your Vercel frontend
 CORS(app, resources={
     r"/*": {
-        "origins": "*",  # Allow all origins
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Allow all methods
-        "allow_headers": ["*"],  # Allow all headers
+        "origins": [
+            "http://localhost:3000",  # Local development
+            "https://multi-agent-ticketing-support-assistant-axqzj49qd.vercel.app"  # Your Vercel deployment
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["*"],
         "supports_credentials": True
     }
 })
