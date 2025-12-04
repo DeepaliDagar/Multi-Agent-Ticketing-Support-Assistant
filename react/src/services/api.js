@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 // Backend API URL - adjust this based on your backend setup
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-
+// const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000'; // local backend
+// Your React frontend talks to Flask backend via HTTP (REST API) using axios
+const API_BASE_URL = 'https://multi-agent-ticketing-support-assistant.onrender.com'; // deployed backend
 /**
  * Send a message to the A2A-MCP backend
  * @param {string} message - User's message

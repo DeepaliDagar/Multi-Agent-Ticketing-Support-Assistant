@@ -31,31 +31,31 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+"""
+    # Database
+    # *.db
+    # *.sqlite
+    # *.sqlite3
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+    # Local Testing Files
+    # local testing files/
 
-# Local Testing Files
-local testing files/
+    # IDE
+    # .vscode/
+    # .idea/
+    # *.swp
+    # *.swo
+    # *~
+    # .DS_Store
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+    # Logs
+    # *.log
+    # a2a_communication_log.json
 
-# Logs
-*.log
-a2a_communication_log.json
-
-# React (if needed)
-react/node_modules/
-react/build/
-react/.env.local
-react/.env.development.local
-react/.env.test.local
-react/.env.production.local
+    # React (if needed)
+    # react/node_modules/
+    # react/build/
+    # react/.env.local
+    # react/.env.development.local
+    # react/.env.test.local
+    # react/.env.production.local
