@@ -266,7 +266,7 @@ All A2A communication is logged to `a2a_communication_log.json`:
 
 ---
 
-## ⚡ Performance Optimizations
+## Performance Optimizations
 
 ### Database Connection Optimization
 
