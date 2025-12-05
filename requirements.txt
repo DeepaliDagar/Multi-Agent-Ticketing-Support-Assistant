@@ -37,7 +37,7 @@ requests>=2.31.0
 
 # Architecture Notes:
 # -------------------
-# - Agents use MCP CLIENT (a2a/mcp_client.py) to discover tools dynamically
-# - MCP Server (customer_mcp/server/mcp_server.py) exposes tools via STDIO
+# - Agents call MCP Server directly via HTTP REST API
+# - MCP Server (customer_mcp/server/mcp_server.py) exposes tools via HTTP
 # - A2A coordination: agents can call other_agents for help
-# - All communication through MCP protocol for flexibility
+# - All communication through HTTP protocol
