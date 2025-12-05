@@ -1,20 +1,33 @@
 """
-MCP Server: Exposes customer management tools via Model Context Protocol
-Run with inspector: npx @modelcontextprotocol/inspector python customer_mcp/server/mcp_server.py
+MCP Server (HTTP): Exposes customer management tools via HTTP REST API
+Run with: python customer_mcp/server/mcp_server.py
+
+This is the main MCP server. Orchestrator and agents call it directly via HTTP.
 """
 import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import MCP SDK (from site-packages)
+# Import MCP SDK
 from mcp.server import Server
 from mcp.types import Tool, TextContent
-from mcp.server.stdio import stdio_server
+#from mcp.server.streamable_http import StreamableHTTPServerTransport
+
+# Import FastAPI for HTTP server
+try:
+    from fastapi import FastAPI, Request, Response
+    from fastapi.responses import StreamingResponse
+    from fastapi.middleware.cors import CORSMiddleware
+    import uvicorn
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
 
 # Import our tools
 from customer_mcp.tools.get_customer import get_customer
@@ -28,7 +41,7 @@ from customer_mcp.tools.fallback_sql import fallback_sql
 # Create server instance
 server = Server("customer-support-mcp")
 
-# Define tools
+# Define tools (same as STDIO version)
 TOOLS = [
     Tool(
         name="get_customer",
@@ -135,7 +148,6 @@ TOOLS = [
         }
     ),
     Tool(
-        #Tool for creating a new ticket for a customer
         name="create_ticket",
         description="Create a new ticket for a customer by their ID",
         inputSchema={
@@ -179,69 +191,104 @@ async def handle_list_tools():
     """List available tools."""
     return TOOLS
 
+# Tool registry mapping tool names to functions
+TOOL_REGISTRY = {
+    "get_customer": get_customer,
+    "get_customer_history": get_customer_history,
+    "list_customers": list_customers,
+    "add_customer": add_customer,
+    "update_customer": update_customer,
+    "create_ticket": create_ticket,
+    "fallback_sql": fallback_sql,
+}
+
 # Register call_tool handler
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict):
-    """Handle tool execution."""
-    
-    if name == "get_customer":
-        result = get_customer(arguments["customer_id"])
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    elif name == "get_customer_history":
-        result = get_customer_history(arguments["customer_id"])
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    elif name == "list_customers":
-        result = list_customers(
-            status=arguments.get("status"),
-            limit=arguments.get("limit")
-        )
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    elif name == "add_customer":
-        result = add_customer(
-            name=arguments["name"],
-            email=arguments.get("email"),
-            phone=arguments.get("phone"),
-            status=arguments.get("status")
-        )
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    elif name == "update_customer":
-        result = update_customer(
-            customer_id=arguments["customer_id"],
-            name=arguments.get("name"),
-            email=arguments.get("email"),
-            phone=arguments.get("phone"),
-            status=arguments.get("status")
-        )
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    elif name == "create_ticket":
-        result = create_ticket(
-            customer_id=arguments["customer_id"],
-            issue=arguments["issue"],
-            priority=arguments["priority"]
-        )
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    elif name == "fallback_sql":
-        result = fallback_sql(arguments["sql_query"])
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
-    else:
+    """Handle tool execution - dynamically calls tool functions."""
+    if name not in TOOL_REGISTRY:
         raise ValueError(f"Unknown tool: {name}")
+    
+    tool_func = TOOL_REGISTRY[name]
+    result = tool_func(**arguments)
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-# Main entry point
-async def main():
-    """Run the MCP server."""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options()
-        )
+# Create FastAPI app
+if FASTAPI_AVAILABLE:
+    app = FastAPI(title="MCP Server (HTTP)")
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint."""
+        return {"status": "ok", "server": "mcp-http"}
+    
+    @app.get("/tools")
+    async def list_tools_endpoint():
+        """List all available tools."""
+        tools_list = await handle_list_tools()
+        return {
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.inputSchema
+                }
+                for tool in tools_list
+            ]
+        }
+    
+    @app.post("/tools/{tool_name}")
+    async def call_tool_endpoint(tool_name: str, request: Request):
+        """Call a tool by name with arguments."""
+        try:
+            body = await request.json()
+            arguments = body.get("arguments", {})
+            
+            # Call the tool handler
+            result = await handle_call_tool(tool_name, arguments)
+            
+            # Extract text content from result
+            if result and len(result) > 0:
+                text_content = result[0].text if hasattr(result[0], 'text') else str(result[0])
+                # Try to parse as JSON, fallback to string
+                try:
+                    return json.loads(text_content)
+                except:
+                    return {"result": text_content}
+            else:
+                return {"result": None}
+        except ValueError as e:
+            return {"error": str(e)}, 400
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+def main():
+    """Run the HTTP MCP server."""
+    if not FASTAPI_AVAILABLE:
+        print("FastAPI and uvicorn are required for HTTP server")
+        print("Install with: pip install fastapi uvicorn")
+        sys.exit(1)
+    
+    import os
+    port = int(os.getenv("MCP_HTTP_PORT", "8001"))
+    host = os.getenv("MCP_HTTP_HOST", "localhost")
+    
+    print(f" Starting MCP HTTP Server on http://{host}:{port}")
+    print(f"   Health: http://{host}:{port}/health")
+    print(f"   Tools: http://{host}:{port}/tools")
+    print(f"   MCP Endpoint: http://{host}:{port}/mcp")
+    
+    uvicorn.run(app, host=host, port=port)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
+

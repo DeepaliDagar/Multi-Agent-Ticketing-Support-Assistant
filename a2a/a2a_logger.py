@@ -77,13 +77,13 @@ class A2ALogger:
     def _print_event(self, event: A2AEvent) -> None:
         """Print event to console with nice formatting"""
         emoji_map = {
-            A2AEventType.TASK_ALLOCATION: "📋",
-            A2AEventType.NEGOTIATION: "🤝",
-            A2AEventType.MULTI_STEP: "🔄",
-            A2AEventType.REQUEST: "📤",
-            A2AEventType.RESPONSE: "📥",
-            A2AEventType.TRANSFER: "➡️",
-            A2AEventType.COMPLETION: "✅"
+            A2AEventType.TASK_ALLOCATION: "[TASK]",
+            A2AEventType.NEGOTIATION: "[NEGOTIATE]",
+            A2AEventType.MULTI_STEP: "[STEP]",
+            A2AEventType.REQUEST: "[REQ]",
+            A2AEventType.RESPONSE: "[RESP]",
+            A2AEventType.TRANSFER: "[TRANSFER]",
+            A2AEventType.COMPLETION: "[DONE]"
         }
         
         emoji = emoji_map.get(event.event_type, "---")
@@ -217,7 +217,7 @@ class A2ALogger:
         summary = self.get_summary()
         
         print("\n" + "=" * 70)
-        print("  📊 A2A COMMUNICATION SUMMARY")
+        print("  A2A COMMUNICATION SUMMARY")
         print("=" * 70)
         print(f"\nSession Start: {summary['session_start']}")
         print(f"Total Events: {summary['total_events']}")
@@ -240,7 +240,7 @@ class A2ALogger:
         with open(filepath, 'w') as f:
             json.dump(log_data, f, indent=2)
         
-        print(f"✅ A2A log exported to {filepath}")
+        print(f"A2A log exported to {filepath}")
     
     def clear(self) -> None:
         """Clear all logged events"""

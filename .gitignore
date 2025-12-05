@@ -10,6 +10,25 @@ venv/
 env/
 ENV/
 
+extras/
+extras/local testing files/
+VERCEL_DEPLOYMENT.md
+
+# Outdated MCP client documentation (already in extras, but explicit)
+extras/local testing files/MCP_CLIENT_GUIDE.md
+extras/local testing files/MCP_CLIENT_MIGRATION.md
+extras/local testing files/WHATS_NEW_MCP_CLIENT.md
+extras/local testing files/BEFORE_AFTER.md
+extras/local testing files/SUMMARY.md
+
+# Test files
+test/
+extras/local testing files/test_*.py
+
+# Alternative entry points
+extras/local testing files/main.py
+extras/local testing files/run.py
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,15 +1,16 @@
 """
 Support Agent - Handles ticket creation and customer support issues
-Uses MCP Client for dynamic tool discovery (no hardcoding!)
+Uses MCP server for dynamic tool discovery
 """
 import os
 import sys
 import json
 from pathlib import Path
+from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 from a2a.utils import SUPPORT_MODEL
-from a2a.mcp_client import get_mcp_client
+import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -18,15 +19,18 @@ load_dotenv()
 class support_agent:
     """Customer support agent with A2A coordination capability."""
     
-    def __init__(self, model: str = SUPPORT_MODEL):
+    def __init__(self, model: str = SUPPORT_MODEL, mcp_server_url: str = None):
         """Initialize support agent with OpenAI client."""
         self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.model = model
         self.name = "support_agent"
         
-        # Dynamic tool discovery from MCP Client
-        self.mcp_client = get_mcp_client()
-        self.tools = self.mcp_client.list_tools(for_agent="support")
+        # MCP Server URL (orchestrator provides this)
+        self.mcp_server_url = mcp_server_url or os.getenv('MCP_HTTP_BASE_URL', 'http://localhost:8001')
+        self.http_client = httpx.Client(timeout=30.0)
+        
+        # Get tools directly from MCP server via HTTP
+        self.tools = self._list_tools_from_server(for_agent="support")
         
         # Add ask_agent tool for A2A coordination
         self.tools.append({
@@ -55,7 +59,7 @@ class support_agent:
     def _execute_tool(self, tool_name: str, arguments: dict, other_agents: dict = None) -> dict:
         """Execute a tool - either via MCP Client or A2A coordination."""
         if tool_name == "ask_agent":
-            # TRUE A2A: Agent requests help from another agent
+            # Agent requests help from another agent
             from a2a.a2a_logger import log_request, log_response
             
             agent_name = arguments["agent_name"]
@@ -75,8 +79,64 @@ class support_agent:
             else:
                 return {"error": f"Agent {agent_name} not available"}
         else:
-            # All other tools: Call via MCP Client
-            return self.mcp_client.call_tool(tool_name, **arguments)
+            # Call MCP server directly via HTTP
+            return self._call_tool_via_http(tool_name, **arguments)
+    
+    def _list_tools_from_server(self, for_agent: str = None):
+        """Get tools directly from MCP server via HTTP."""
+        try:
+            response = self.http_client.get(f"{self.mcp_server_url}/tools")
+            response.raise_for_status()
+            data = response.json()
+            
+            all_tools = data.get("tools", [])
+            
+            # Filter by agent if specified
+            if for_agent:
+                filtered_tools = []
+                for tool in all_tools:
+                    tool_name = tool.get("name", "")
+                    if for_agent == "support" and tool_name in [
+                        "create_ticket", "get_customer_history"
+                    ]:
+                        filtered_tools.append(tool)
+                tools = filtered_tools
+            else:
+                tools = all_tools
+            
+            # Convert to OpenAI function format
+            openai_tools = []
+            for tool in tools:
+                openai_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parameters": tool["inputSchema"]
+                    }
+                })
+            
+            return openai_tools
+        except Exception as e:
+            print(f"Error listing tools from MCP server: {e}")
+            return []
+    
+    def _call_tool_via_http(self, tool_name: str, **kwargs):
+        """Call a tool directly on MCP server via HTTP."""
+        try:
+            response = self.http_client.post(
+                f"{self.mcp_server_url}/tools/{tool_name}",
+                json={"arguments": kwargs}
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if "error" in data:
+                return {"error": data["error"]}
+            
+            return data.get("result", data)
+        except Exception as e:
+            return {"error": f"Tool call failed: {str(e)}"}
     
     def process(self, user_query: str, conversation_history: str = "", other_agents: dict = None) -> str:
         """
@@ -102,7 +162,7 @@ YOUR TOOLS:
 PRIORITY ASSIGNMENT GUIDELINES:
 When creating tickets, analyze the issue and assign priority based on these criteria:
 
-🔴 HIGH PRIORITY (critical issues affecting customer access or business):
+HIGH PRIORITY (critical issues affecting customer access or business):
    - Login/authentication issues
    - Account locked or disabled
    - Payment/billing failures
@@ -110,14 +170,14 @@ When creating tickets, analyze the issue and assign priority based on these crit
    - Service completely unavailable
    - Security concerns
 
-🟡 MEDIUM PRIORITY (important but not blocking):
+MEDIUM PRIORITY (important but not blocking):
    - Software bugs affecting functionality
    - Performance/speed issues
    - Billing/invoice questions
    - Feature not working as expected
    - Integration issues
 
-🟢 LOW PRIORITY (nice-to-have or informational):
+LOW PRIORITY (nice-to-have or informational):
    - Feature requests
    - General questions/how-to
    - Minor UI issues
@@ -181,7 +241,7 @@ When you need information you don't have access to, use ask_agent to request hel
             return "Request processed with multiple steps."
             
         except Exception as e:
-            return f"❌ Error: {str(e)}"
+            return f"Error: {str(e)}"
 
 
 def create_support_agent(model: str = SUPPORT_MODEL) -> support_agent:

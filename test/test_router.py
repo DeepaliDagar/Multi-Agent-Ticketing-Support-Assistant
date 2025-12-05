@@ -4,7 +4,6 @@ Test the Router Agent
 import sys
 import os
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from a2a.agent.router_agent import router_agent 
@@ -18,7 +17,6 @@ def test_router():
     
     router = router_agent()
     
-    # Test cases
     test_queries = [
         ("Show me all active customers", "customer_data"),
         ("Get details for customer ID 5", "customer_data"),
@@ -27,7 +25,7 @@ def test_router():
         ("I have a billing problem", "support"),
         ("Create a ticket for login issue", "support"),
         ("My order hasn't arrived", "support"),
-        ("Find all customers whose ticket was created in the last 30 days and are active", "fallback_sql"),
+        ("Find all customers whose ticket was created in the last 30 days and are active", "sql"),
     ]
     
     correct = 0
@@ -36,7 +34,7 @@ def test_router():
     for query, expected_route in test_queries:
         print(f"Query: '{query}'")
         result = router.route(query)
-        status = "✅" if result == expected_route else "❌"
+        status = "PASS" if result == expected_route else "FAIL"
         print(f"{status} Routed to: {result} (expected: {expected_route})")
         
         if result == expected_route:
@@ -50,4 +48,3 @@ def test_router():
 
 if __name__ == "__main__":
     test_router()
-

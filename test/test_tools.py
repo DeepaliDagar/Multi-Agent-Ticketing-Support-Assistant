@@ -25,12 +25,12 @@ def print_header(title):
 def print_result(result):
     """Pretty print a result dictionary."""
     if result.get('success'):
-        print("✅ SUCCESS")
+        print("SUCCESS")
         for key, value in result.items():
             if key != 'success':
                 print(f"  {key}: {value}")
     else:
-        print("❌ FAILED")
+        print("FAILED")
         print(f"  Error: {result.get('error')}")
     print()
 
@@ -87,7 +87,7 @@ if new_customer_id:
     print_result(result)
 else:
     print_header("TEST 5: Update Customer")
-    print("⚠️  SKIPPED - No customer ID from previous test")
+    print("SKIPPED - No customer ID from previous test")
 
 # =================================================================
 # TEST 6: Test SQL Fallback (if available)
@@ -98,7 +98,7 @@ try:
     result = execute_generated_sql("SELECT name, email FROM customers LIMIT 3")
     print_result(result)
 except Exception as e:
-    print(f"⚠️  Error: {str(e)}\n")
+    print(f"Error: {str(e)}\n")
 
 # =================================================================
 # TEST 7: Error Handling - Invalid Customer ID

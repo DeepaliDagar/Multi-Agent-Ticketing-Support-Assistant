@@ -17,6 +17,7 @@ from a2a.agent.customer_data_agent import customer_data_agent
 from a2a.agent.support_agent import support_agent
 from a2a.agent.fallback_sql_generator_agent import fallback_sql_generator_agent
 from a2a.agent_card import get_agent_registry
+import httpx
 
 
 # Define the state schema
@@ -38,10 +39,16 @@ class LangGraphOrchestrator:
     
     def __init__(self):
         """Initialize the LangGraph orchestrator."""
+        # MCP Server HTTP configuration (orchestrator calls MCP server directly)
+        self.mcp_server_url = os.getenv('MCP_HTTP_BASE_URL', 'http://localhost:8001')
+        self.http_client = httpx.Client(timeout=30.0)
+        
         self.router = router_agent()
-        self.customer_data_agent = customer_data_agent()
-        self.support_agent = support_agent()
-        self.sql_agent = fallback_sql_generator_agent()
+        
+        # Initialize agents - they'll call MCP server via orchestrator's HTTP client
+        self.customer_data_agent = customer_data_agent(mcp_server_url=self.mcp_server_url)
+        self.support_agent = support_agent(mcp_server_url=self.mcp_server_url)
+        self.sql_agent = fallback_sql_generator_agent(mcp_server_url=self.mcp_server_url)
         
         # Get agent registry for A2A coordination
         self.agent_registry = get_agent_registry()
@@ -110,7 +117,7 @@ class LangGraphOrchestrator:
         query = state["query"]
         
         # Use router to pick PRIMARY agent
-        # The agent's LLM will decide if it needs help from others (TRUE A2A)
+        # The agent's LLM will decide if it needs help from others
         route = self.router.route(query)
         
         print(f" Routing to: {route} (agent will coordinate with others if needed)")
@@ -141,7 +148,7 @@ class LangGraphOrchestrator:
         return any(keyword in query_lower for keyword in parallel_keywords)
     
     def _decide_next(self, state: AgentState) -> str:
-        """Route to primary agent. With TRUE A2A, agents coordinate themselves."""
+        """Route to primary agent. With A2A coordination, agents coordinate themselves."""
         return state["route"]
     
     def _call_customer_data(self, state: AgentState) -> AgentState:
@@ -149,13 +156,13 @@ class LangGraphOrchestrator:
         query = state["query"]
         history = self._format_history(state.get("conversation_history", []))
         
-        # Enable A2A: Pass agent cards (not raw agents)
+        # Pass agent cards (not raw agents)
         # Agent can read cards to decide who to ask for help
         agent_cards_context = self.agent_registry.get_cards_for_context(
             exclude=['customer_data']  # Don't include self
         )
         
-        # For now, pass both cards (for LLM reasoning) and actual agents (for invocation)
+        # Pass both cards (for LLM reasoning) and actual agents (for invocation)
         other_agents = {
             "cards": agent_cards_context,
             "support": self.support_agent,
@@ -174,11 +181,11 @@ class LangGraphOrchestrator:
         }
     
     def _call_support(self, state: AgentState) -> AgentState:
-        """Execute support agent with A2A coordination via agent cards."""
+        """Execute support agent with A2A coordination."""
         query = state["query"]
         history = self._format_history(state.get("conversation_history", []))
         
-        # Enable A2A: Pass agent cards for decision making
+        # Pass agent cards for decision making
         agent_cards_context = self.agent_registry.get_cards_for_context(
             exclude=['support']  # Don't include self
         )
@@ -201,11 +208,11 @@ class LangGraphOrchestrator:
         }
     
     def _call_sql(self, state: AgentState) -> AgentState:
-        """Execute SQL generator agent with A2A coordination via agent cards."""
+        """Execute SQL generator agent with A2A coordination."""
         query = state["query"]
         history = self._format_history(state.get("conversation_history", []))
         
-        # Enable A2A: Pass agent cards for decision making
+        # Pass agent cards for decision making
         agent_cards_context = self.agent_registry.get_cards_for_context(
             exclude=['sql']  # Don't include self
         )

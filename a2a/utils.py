@@ -2,52 +2,33 @@
 Utilities and Configuration for A2A-MCP System
 """
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Try to load .env, but don't fail if it doesn't exist or has permission issues
 try:
     load_dotenv()
 except (FileNotFoundError, PermissionError) as e:
-    print(f"⚠️  Warning: Could not load .env file ({e}). Using environment variables.")
+    print(f"Warning: Could not load .env file ({e}). Using environment variables.")
 
-# MCP Server Configuration
-
-# Note: MCP Server is kept ONLY for testing with MCP Inspector
-# Agents call tools directly as Python functions (no network calls)
-
-# MCP Server for testing with MCP Inspector and agent to know which tools are available
-MCP_SERVER_HOST = os.getenv('MCP_SERVER_HOST', 'localhost')
-MCP_SERVER_PORT = os.getenv('MCP_SERVER_PORT', '8000')
-
+# MCP Server HTTP Configuration
+MCP_HTTP_HOST = os.getenv('MCP_HTTP_HOST', 'localhost')
+MCP_HTTP_PORT = int(os.getenv('MCP_HTTP_PORT', '8001'))
+MCP_HTTP_BASE_URL = f"http://{MCP_HTTP_HOST}:{MCP_HTTP_PORT}"
 
 # API Keys
-
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-
 # Model Configuration
-
-# Router Model (fast classification)
 ROUTER_MODEL = os.getenv('ROUTER_MODEL', 'gpt-4o-mini')
-
-# Agent Models
 CUSTOMER_DATA_MODEL = os.getenv('CUSTOMER_DATA_MODEL', 'gpt-4o-mini')
 SUPPORT_MODEL = os.getenv('SUPPORT_MODEL', 'gpt-4o-mini')
-SQL_GENERATOR_MODEL = os.getenv('SQL_GENERATOR_MODEL', 'gpt-4o') # good for complex queries
-
+SQL_GENERATOR_MODEL = os.getenv('SQL_GENERATOR_MODEL', 'gpt-3.5-turbo')
 
 # Database Configuration
-
-from pathlib import Path
-
-# Get project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATABASE_PATH = PROJECT_ROOT / 'Database' / 'support.db'
 
-
-# MCP Tools Configuration
-
-# Available MCP tools
+# MCP Tools
 MCP_TOOLS = [
     'get_customer',
     'list_customers',
@@ -57,9 +38,6 @@ MCP_TOOLS = [
     'get_customer_history',
     'fallback_sql',
 ]
-
-
-# Validation
 
 def validate_config():
     """Validate that all required configuration is present."""
@@ -78,14 +56,11 @@ def validate_config():
     
     return True
 
-
-# Helper Functions
-
 def get_config_summary() -> dict:
     """Get a summary of current configuration."""
     return {
-        "architecture": "Direct tool imports (no HTTP)",
-        "mcp_server_for_testing": f"{MCP_SERVER_HOST}:{MCP_SERVER_PORT}",
+        "architecture": "HTTP-based MCP server",
+        "mcp_server_url": MCP_HTTP_BASE_URL,
         "database": str(DATABASE_PATH),
         "models": {
             "router": ROUTER_MODEL,
@@ -96,18 +71,11 @@ def get_config_summary() -> dict:
         "tools_available": len(MCP_TOOLS),
     }
 
-
-# Auto-validate on import
-
 if __name__ != "__main__":
-    # Only validate when imported, not when run directly
     try:
         validate_config()
     except ValueError as e:
-        print(f"⚠️  Configuration Warning: {e}")
-
-
-# CLI for testing
+        print(f"Configuration Warning: {e}")
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -121,9 +89,8 @@ if __name__ == "__main__":
     print(f"  {config['architecture']}")
     print()
     
-    print("MCP Server (Testing Only):")
-    print(f"  Endpoint: {config['mcp_server_for_testing']}")
-    print(f"  Purpose: MCP Inspector testing")
+    print("MCP Server:")
+    print(f"  URL: {config['mcp_server_url']}")
     print()
     
     print("Database:")
@@ -143,14 +110,12 @@ if __name__ == "__main__":
     print()
     
     print("Environment:")
-    print(f"  OPENAI_API_KEY: {'✅ Set' if OPENAI_API_KEY else '❌ Not set'}")
+    print(f"  OPENAI_API_KEY: {'Set' if OPENAI_API_KEY else 'Not set'}")
     print()
     
-    # Validate
     try:
         validate_config()
-        print("✅ Configuration is valid!")
+        print("Configuration is valid!")
     except ValueError as e:
-        print(f"❌ Configuration errors:")
+        print(f"Configuration errors:")
         print(e)
-

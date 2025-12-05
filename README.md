@@ -56,14 +56,37 @@ cd ..
 
 ### 4. Start the System
 
-**Backend (Terminal 1):**
+**Option A: Terminal Chat (Simplest - No Backend API needed!)**
+
+**Terminal 1 - MCP Server:**
+```bash
+source genaienv/bin/activate
+python customer_mcp/server/mcp_server.py
+```
+
+**Terminal 2 - Chat:**
+```bash
+source genaienv/bin/activate
+python chat_terminal.py
+```
+
+---
+
+**Option B: Web UI (Requires Backend API)**
+
+**Terminal 1 - MCP Server:**
+```bash
+source genaienv/bin/activate
+python customer_mcp/server/mcp_server.py
+```
+
+**Terminal 2 - Backend API:**
 ```bash
 source genaienv/bin/activate
 python backend_api.py
 ```
-Backend runs on: `http://localhost:8000`
 
-**Frontend (Terminal 2):**
+**Terminal 3 - Frontend:**
 ```bash
 cd react
 npm start
@@ -89,7 +112,6 @@ A2A-MCP/
 │   └── package.json                    # React dependencies
 │
 ├── a2a/                                # Agent System
-│   ├── mcp_client.py                   # MCP client (dynamic tool discovery)
 │   ├── langgraph_orchestrator.py      # LangGraph orchestrator
 │   ├── a2a_logger.py                   # A2A communication logger
 │   ├── agent_card.py                   # Agent registry
@@ -102,7 +124,7 @@ A2A-MCP/
 │
 ├── customer_mcp/                       # MCP Tools & Server
 │   ├── server/
-│   │   └── mcp_server.py               # MCP server implementation
+│   │   └── mcp_server.py               # MCP HTTP server (REST API)
 │   ├── tools/
 │   │   ├── db_utils.py                 # Database utilities (WAL mode)
 │   │   ├── get_customer.py             # Get customer by ID
@@ -198,11 +220,14 @@ A2A-MCP/
 
 MCP is a standardized protocol for AI agents to discover and use tools dynamically. Instead of hardcoding tools, agents query the MCP server for available capabilities.
 
+**Architecture:** Orchestrator and agents call the MCP server directly via HTTP REST API (no client layer needed).
+
 ### Benefits
 
 - Tools defined once in MCP registry
-- **Dynamic discovery** - Agents automatically discover new tools
+- **Dynamic discovery** - Agents automatically discover new tools via HTTP
 - **Clean separation** - Tools are independent of agents
+- **HTTP-based** - Simple REST API, no subprocess/STDIO complexity
 
 ### Available MCP Tools
 
@@ -219,8 +244,13 @@ MCP is a standardized protocol for AI agents to discover and use tools dynamical
 ### Testing MCP Tools
 
 ```bash
-# Use MCP Inspector to test tools
-npx @modelcontextprotocol/inspector python customer_mcp/server/mcp_server.py
+# Start MCP server
+python customer_mcp/server/mcp_server.py
+
+# Test via HTTP (in another terminal)
+curl http://localhost:8001/health
+curl http://localhost:8001/tools
+curl -X POST http://localhost:8001/tools/list_customers -H "Content-Type: application/json" -d '{"arguments": {"limit": 3}}'
 ```
 
 ---

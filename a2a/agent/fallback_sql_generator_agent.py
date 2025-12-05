@@ -1,15 +1,16 @@
 """
 Fallback SQL Generator Agent - Generates SQL queries from natural language
-Uses MCP Client for dynamic tool discovery (no hardcoding!)
+Uses MCP server for dynamic tool discovery
 """
 import os
 import sys
 import json
 from pathlib import Path
+from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 from a2a.utils import SQL_GENERATOR_MODEL
-from a2a.mcp_client import get_mcp_client
+import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -20,20 +21,38 @@ class fallback_sql_generator_agent:
     """SQL generator agent that converts natural language to SQL queries."""
     
     # constructor
-    def __init__(self, model: str = SQL_GENERATOR_MODEL):
+    def __init__(self, model: str = SQL_GENERATOR_MODEL, mcp_server_url: str = None):
         """Initialize SQL generator agent with OpenAI client."""
         self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.model = model
         self.name = "fallback_sql_generator_agent"
         
-        # Dynamic tool discovery from MCP Client
-        self.mcp_client = get_mcp_client()
+        # MCP Server URL (orchestrator provides this)
+        self.mcp_server_url = mcp_server_url or os.getenv('MCP_HTTP_BASE_URL', 'http://localhost:8001')
+        self.http_client = httpx.Client(timeout=30.0)
         
         self.schema = """
 Database Schema:
 - customers: id, name, email, phone, status, created_at, updated_at
 - tickets: id, customer_id, issue, priority, status, created_at, updated_at
 """
+    
+    def _call_tool_via_http(self, tool_name: str, **kwargs):
+        """Call a tool directly on MCP server via HTTP."""
+        try:
+            response = self.http_client.post(
+                f"{self.mcp_server_url}/tools/{tool_name}",
+                json={"arguments": kwargs}
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if "error" in data:
+                return {"error": data["error"]}
+            
+            return data.get("result", data)
+        except Exception as e:
+            return {"error": f"Tool call failed: {str(e)}"}
     # process method
     def process(self, user_query: str, conversation_history: str = "", other_agents: dict = None) -> str:
         """
@@ -101,7 +120,7 @@ Examples of what YOU should handle:
                 model=self.model,
                 messages=messages,
                 temperature=0,  # Deterministic for SQL generation
-                max_tokens=500  # Increased from 300 to allow complex queries
+                max_tokens=500  # 500 tokens to allow complex queries
             )
             
             sql_query = response.choices[0].message.content.strip()
@@ -109,8 +128,8 @@ Examples of what YOU should handle:
             # Remove markdown code blocks if present
             sql_query = sql_query.replace('```sql', '').replace('```', '').strip()
             
-            # Execute the generated SQL via MCP Client
-            result = self.mcp_client.call_tool("fallback_sql", sql_query=sql_query)
+            # Execute the generated SQL via MCP server HTTP
+            result = self._call_tool_via_http("fallback_sql", sql_query=sql_query)
             
             # Format the response
             if result.get("success"):
@@ -119,10 +138,10 @@ Examples of what YOU should handle:
                 count = result.get("count", 0)
                 
                 if count == 0:
-                    return f"✅ SQL Query Executed:\n```sql\n{sql_query}\n```\n\nNo results found."
+                    return f"SQL Query Executed:\n```sql\n{sql_query}\n```\n\nNo results found."
                 
                 # Format results as a table
-                response_text = f"✅ SQL Query Executed:\n```sql\n{sql_query}\n```\n\n"
+                response_text = f"SQL Query Executed:\n```sql\n{sql_query}\n```\n\n"
                 response_text += f"Found {count} result(s):\n\n"
                 
                 # Display results
@@ -136,10 +155,10 @@ Examples of what YOU should handle:
                 
                 return response_text
             else:
-                return f"❌ SQL Error:\n```sql\n{sql_query}\n```\n\nError: {result.get('error', 'Unknown error')}"
+                return f"SQL Error:\n```sql\n{sql_query}\n```\n\nError: {result.get('error', 'Unknown error')}"
             
         except Exception as e:
-            return f"❌ Error processing request: {str(e)}"
+            return f"Error processing request: {str(e)}"
 
 
 def create_fallback_sql_generator_agent(model: str = SQL_GENERATOR_MODEL) -> fallback_sql_generator_agent:
