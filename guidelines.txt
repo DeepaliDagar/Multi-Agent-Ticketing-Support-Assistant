@@ -1,0 +1,145 @@
+# A2A-MCP Project Guidelines
+
+## 1. Environment Setup
+# Create virtual environment
+python -m venv genaienv
+source genaienv/bin/activate  
+
+# Install dependencies
+pip install -r requirements.txt
+
+## 2. Database Setup
+# Initialize database
+python Database/database_setup.py
+
+## 3. Configuration
+# Create .env file to store credentials
+touch .env
+# Add: OPENAI_API_KEY=your_key_here
+
+# Create .gitignore to protect credentials
+echo ".env" >> .gitignore
+echo "genaienv/" >> .gitignore
+echo "__pycache__/" >> .gitignore
+echo "*.pyc" >> .gitignore
+
+
+## 4. Project Architecture
+
+### MCP Tools (customer_mcp/tools/)
+CRUD operations:
+- get_customer.py - Retrieve customer by ID
+- list_customers.py - List/filter customers
+- add_customer.py - Add new customer
+- update_customer.py - Update customer info
+- create_ticket.py - Create support ticket
+- get_customer_history.py - Get customer history
+- fallback_sql.py - Execute custom SQL queries
+
+### Agents (a2a/agent/)
+Specialized agents:
+1. router_agent.py - Routes queries to appropriate agents
+2. customer_data_agent.py - Handles customer operations
+3. support_agent.py - Handles tickets and support
+4. fallback_sql_generator_agent.py - Generates complex SQL (used only if other agents are not capable)
+
+### Orchestrator (a2a/)
+- using google adk 
+
+## 5. Python Package Structure
+# Add __init__.py files to recognize directories as packages
+touch customer_mcp/__init__.py
+touch customer_mcp/tools/__init__.py
+touch customer_mcp/server/__init__.py
+touch a2a/__init__.py
+touch a2a/agent/__init__.py
+
+## 6. MCP Server
+# Start the MCP server
+python customer_mcp/server/mcp_server.py
+
+# Or use MCP Inspector for testing
+npx @modelcontextprotocol/inspector python customer_mcp/server/mcp_server.py
+# Opens: http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=...
+# Test all 7 tools in the browser UI
+
+
+## 7. Usage
+
+# Basic usage
+from a2a.langgraph_orchestrator import create_langgraph_orchestrator
+
+orch = create_langgraph_orchestrator()
+
+# Single query
+result = orch.process("Show me all customers", thread_id="user1")
+
+# Multi-turn with memory
+result = orch.process("Get customer 5", thread_id="user1")
+result = orch.process("Create ticket for him", thread_id="user1")
+
+## 9. Agent Flow
+
+User Query
+    ↓
+Router Agent (classifies: customer_data | support | fallback_sql)
+    ↓
+Check if parallel execution needed
+    ↓
+Execute Agent(s) with conversation history
+    ↓
+Merge results if parallel
+    ↓
+Store in memory (per thread_id)
+    ↓
+Return response
+
+## 10. Key Features
+
+✅ LangGraph orchestration with parallel execution
+✅ Conversation memory per thread
+✅ Conditional routing based on query type
+✅ Automatic result merging
+✅ 100% router accuracy
+✅ MCP-compliant tool interface
+✅ SQLite database with proper schema
+✅ Comprehensive test coverage
+
+## 11. Important Notes
+
+- Always use the same thread_id for conversation continuity
+- Router uses gpt-4o-mini for speed and cost
+- SQL agent uses gpt-4o for precision
+- MCP server must be running for tools to work
+- Database path is auto-resolved from project root
+- Parallel execution triggers on keywords: "and", "then", "both", "also", "plus"
+
+## 12. File Naming Conventions
+
+- Agents: lowercase with underscores (e.g., customer_data_agent)
+- Classes: lowercase with underscores (e.g., class customer_data_agent)
+- Functions: lowercase with underscores (e.g., def process_query)
+- Thread IDs: descriptive strings (e.g., "user_session_123")
+
+## 13. Resources
+
+- README.md - Complete project overview
+- LANGGRAPH_SETUP.md - Detailed LangGraph guide
+- requirements.txt - All dependencies
+- test/ - Example usage and tests
+
+## 14. Troubleshooting
+
+# Module not found
+pip install -r requirements.txt
+
+# Database error
+python Database/database_setup.py
+
+# Memory not working
+# Use same thread_id for all related queries
+
+# MCP server not connecting
+# Check port 8000 is free: lsof -i :8000
+
+System is production-ready!

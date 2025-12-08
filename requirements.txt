@@ -1,0 +1,32 @@
+# OpenAI SDK (for LLM agents)
+openai>=1.50.0
+
+# Environment & Configuration
+python-dotenv>=1.0.0
+
+
+mcp>=1.0.0
+
+# Flask API for React UI
+flask>=3.0.0
+flask-cors>=4.0.0
+gunicorn>=21.2.0
+
+# FastAPI for MCP HTTP Server
+fastapi>=0.115.0
+uvicorn>=0.30.0
+httpx>=0.27.0  # For HTTP client
+
+google-adk 
+google-generativeai 
+litellm>=1.0.0  # Universal LLM adapter for OpenAI, Gemini, and other providers
+pyngrok
+termcolor
+
+pydantic # for validation
+
+aiohttp # for async http requests
+uvicorn # for uvicorn server
+requests # for http requests
+mermaid-python # for mermaid diagrams
+nest-asyncio # for asyncio
