@@ -2,7 +2,7 @@
 
 A production-ready multi-agent customer support system featuring Google ADK, FastMCP server, intelligent agent routing, and an interactive chatbot interface.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Install Dependencies
 
@@ -56,7 +56,7 @@ In a new terminal:
 python chatbot.py
 ```
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
 User Query → Orchestrator → Router Agent (Supervisor)
@@ -85,7 +85,25 @@ User Query → Orchestrator → Router Agent (Supervisor)
 - **Support Agent**: Support ticket creation and management
 - **SQL Generator Agent**: Handles complex SQL queries for advanced analytics
 
-## 🛠️ MCP Tools
+### Agent Architecture Notes
+
+**LLM Backend**: All agents use LLM backends (GPT-4o-mini, GPT-3.5-turbo) for intelligent decision-making:
+- Router Agent uses LLM to analyze queries and make routing decisions
+- Customer Data, Support, and SQL Agents use LLMs to understand user intent and execute appropriate tools
+- LLMs process natural language queries and generate structured responses
+
+**MCP Server Integration**: Agents connect directly to the MCP server, not Python functions:
+- All agents use `McpToolset` with `StreamableHTTPConnectionParams` to connect to FastMCP server
+- Tools are discovered dynamically via MCP protocol (`tools/list`)
+- Tool calls are made through MCP protocol (`tools/call`) over HTTP
+- Agents do not import or call Python tool functions directly - all communication is via MCP
+
+**A2A Support**: Agent-to-Agent (A2A) coordination is built into Google ADK:
+- No custom A2A classes needed - Google ADK provides native A2A capabilities
+- The orchestrator uses Google ADK's `Runner` and `InMemorySessionService` for agent coordination
+- Agents can coordinate through ADK's built-in mechanisms and session management
+
+## MCP Tools
 
 7+ tools exposed via FastMCP server:
 
@@ -102,7 +120,7 @@ User Query → Orchestrator → Router Agent (Supervisor)
 **Database:**
 - `fallback_sql` - Execute custom SQL queries (SELECT, INSERT, UPDATE only)
 
-## 📚 Documentation
+## Documentation
 
 For comprehensive documentation including:
 - File-by-file breakdown
@@ -112,7 +130,7 @@ For comprehensive documentation including:
 
 See **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)**
 
-## 🔍 MCP Inspector
+## MCP Inspector
 
 Test the MCP server using the MCP Inspector:
 
@@ -128,7 +146,7 @@ npx @modelcontextprotocol/inspector
 - Enter server URL: `http://localhost:8001/mcp`
 - Click "Connect"
 
-## 💻 Usage Examples
+## Usage Examples
 
 ### Chatbot Interface
 
@@ -156,7 +174,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -178,7 +196,7 @@ The system uses LiteLLM for multi-provider LLM support:
 - **Gemini models**: `gemini-1.5-flash`, `gemini-1.5-pro`
 - **Other providers**: `anthropic/claude-3-5-sonnet`, etc.
 
-## 🔄 How It Works
+## How It Works
 
 ### Supervisor Agent Architecture
 
@@ -207,7 +225,7 @@ User: "Get customer 1 and create a ticket"
 
 For detailed execution flows and technical deep dives, see [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md).
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### MCP Server Issues
 
@@ -238,7 +256,7 @@ lsof -ti :8001 | xargs kill -9
 - Check API key is valid
 - Ensure LiteLLM is configured correctly
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 googleadk/
@@ -262,15 +280,12 @@ googleadk/
 └── PROJECT_DOCUMENTATION.md     # Comprehensive documentation
 ```
 
-## 🔗 References
+## References
 
 - [MCP Documentation](https://modelcontextprotocol.io/docs/develop/build-server)
 - [Google ADK Documentation](https://google.github.io/adk-docs/)
 - [FastMCP Guide](https://modelcontextprotocol.io/docs/develop/build-server)
 
-## 📝 License
-
-[Add your license here]
 
 ---
 
