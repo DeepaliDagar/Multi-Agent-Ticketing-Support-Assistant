@@ -8,12 +8,69 @@ Reference: https://modelcontextprotocol.io/docs/develop/build-server
 import json
 import sys
 import os
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# Suppress harmless errors from MCP streamable HTTP cleanup
+# These occur when sessions terminate and message routers try to read from closed streams
+# They're expected behavior and don't affect functionality
+
+# Custom filter to suppress known harmless errors
+class MCPErrorFilter(logging.Filter):
+    """Filter out known harmless MCP connection cleanup errors."""
+    def filter(self, record):
+        # Get the log message
+        message = record.getMessage()
+        
+        # List of harmless error patterns
+        harmless_patterns = [
+            'ClosedResourceError',
+            'Error in message router',
+            'Terminating session',
+            'receive_nowait',
+            'WouldBlock',
+            'async generator ignored',
+            'CancelledError',
+            'Cancelled via cancel scope',
+            'Exception in thread',
+            '_asyncio_thread_main',
+        ]
+        
+        # Check if message contains any harmless pattern
+        if any(pattern in message for pattern in harmless_patterns):
+            return False  # Don't log this message
+        
+        # Also check exception type if available
+        if hasattr(record, 'exc_info') and record.exc_info:
+            exc_type = record.exc_info[0]
+            if exc_type:
+                exc_name = exc_type.__name__
+                if any(pattern in exc_name for pattern in ['ClosedResourceError', 'CancelledError', 'WouldBlock']):
+                    return False
+        
+        return True  # Log other messages
+
+# Apply comprehensive logging suppression
+mcp_loggers = [
+    'mcp.server.streamable_http',
+    'mcp.server.streamable_http_manager',
+    'mcp.server',
+    'mcp',
+]
+
+for logger_name in mcp_loggers:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.WARNING)  # Suppress INFO/ERROR, keep WARNING+
+    logger.addFilter(MCPErrorFilter())  # Add custom filter
+
+# Also suppress anyio and asyncio cleanup errors
+logging.getLogger('anyio').setLevel(logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 # Import FastMCP
 from mcp.server.fastmcp import FastMCP
@@ -32,15 +89,25 @@ MCP_HTTP_HOST = os.getenv('MCP_HTTP_HOST', 'localhost')
 MCP_HTTP_PORT = int(os.getenv('MCP_HTTP_PORT', '8001'))
 
 # Initialize FastMCP server
-# Use stateless_http=True and json_response=True for optimal performance
+# Use stateless_http=True for optimal performance
+# Note: Setting json_response=False to support SSE mode (required by Google ADK client)
+# The client may try to establish SSE connections which require text/event-stream in Accept header
 mcp = FastMCP(
     "customer-management-server",
     host=MCP_HTTP_HOST,
     port=MCP_HTTP_PORT,
     streamable_http_path="/mcp",  # Path for Google ADK compatibility
     stateless_http=True,  # Recommended for production
-    json_response=True,  # Use JSON responses (faster than SSE streaming)
+    json_response=False,  # Use SSE mode (required for Google ADK client compatibility)
+    log_level="INFO",  # Set to INFO to see connection attempts (change back to WARNING later)
 )
+
+# Verify configuration (for debugging)
+import sys
+if hasattr(mcp, '_settings') and hasattr(mcp._settings, 'json_response'):
+    if not mcp._settings.json_response:
+        print("⚠️  Warning: json_response was not properly set to True!", file=sys.stderr)
+        print("   Server may require text/event-stream in Accept header", file=sys.stderr)
 
 
 # Helper function to format tool responses as JSON strings
@@ -148,9 +215,12 @@ def fallback_sql_tool(sql_query: str) -> str:
 def main():
     """Entry point for the FastMCP server."""
     # Run server with streamable-http transport (recommended for HTTP)
-    print(f"🚀 Starting FastMCP server on {MCP_HTTP_HOST}:{MCP_HTTP_PORT}")
-    print(f"📡 Server will be available at: http://{MCP_HTTP_HOST}:{MCP_HTTP_PORT}/mcp")
-    print(f"🔧 Transport: streamable-http (stateless, JSON responses)")
+    print(f" Starting FastMCP server on {MCP_HTTP_HOST}:{MCP_HTTP_PORT}")
+    print(f" Server will be available at: http://{MCP_HTTP_HOST}:{MCP_HTTP_PORT}/mcp")
+    print(f" Transport: streamable-http (stateless, SSE mode)")
+    print(f"✅ Configuration: json_response=False, stateless_http=True")
+    print(f" Note: Using SSE mode for Google ADK client compatibility")
+    print(f"   Client must send Accept: application/json, text/event-stream headers")
     mcp.run(transport="streamable-http")
 
 

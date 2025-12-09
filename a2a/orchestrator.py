@@ -14,7 +14,7 @@ import os
 import sys
 import asyncio
 from pathlib import Path
-# Add project root to path when running as script (must be before imports)
+
 # This allows absolute imports to work when running directly
 if __name__ == "__main__" or not __package__:
     project_root = Path(__file__).resolve().parent.parent
@@ -23,12 +23,23 @@ if __name__ == "__main__" or not __package__:
 
 from a2a.utils import MCP_HTTP_BASE_URL
 
-# Configure logging - ADK handles its own logging via GOOGLE_SDK_PYTHON_LOGGING_SCOPE env var
+# Configure logging  ADK handles its own logging via GOOGLE_SDK_PYTHON_LOGGING_SCOPE env var
 # Only suppress if explicitly requested via environment variable
 if os.getenv('SUPPRESS_ADK_LOGS', 'false').lower() == 'true':
     logging.getLogger('google.adk').setLevel(logging.CRITICAL)
     logging.getLogger('google.genai').setLevel(logging.CRITICAL)
     logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+
+# Suppress app name mismatch warnings - this is expected when using programmatically created agents
+# The LlmAgent class comes from google.adk.agents, but we use our own app names
+# Apply this suppression early and comprehensively
+_adk_runners_logger = logging.getLogger('google.adk.runners')
+_adk_runners_logger.setLevel(logging.ERROR)  # Suppress WARNING, keep ERROR
+_adk_runners_logger.propagate = False  # Prevent propagation to root logger
+
+# Also suppress warnings at the warning module level
+import warnings
+warnings.filterwarnings('ignore', message='.*App name mismatch detected.*')
 
 # Suppress known harmless async cleanup errors from MCP connections
 # These happen when connections are cleaned up in background tasks
@@ -54,6 +65,8 @@ logging.getLogger('asyncio').addFilter(AsyncCleanupFilter())
 warnings.filterwarnings('ignore')
 
 # Support both relative imports (when used as module) and absolute imports (when run as script)
+# Import agents - wrap in try-except to handle MCP connection issues during import
+# Agents are created at module import time, but MCP connections happen lazily
 try:
     from .agent.router_agent import router_agent
     from .agent.customer_data_agent import customer_data_agent
@@ -61,14 +74,38 @@ try:
     from .agent.fallback_sql_generator_agent import fallback_sql_generator_agent
 except ImportError:
     # Fallback to absolute imports when running as script
-    from a2a.agent.router_agent import router_agent
-    from a2a.agent.customer_data_agent import customer_data_agent
-    from a2a.agent.support_agent import support_agent
-    from a2a.agent.fallback_sql_generator_agent import fallback_sql_generator_agent
+    try:
+        from a2a.agent.router_agent import router_agent
+        from a2a.agent.customer_data_agent import customer_data_agent
+        from a2a.agent.support_agent import support_agent
+        from a2a.agent.fallback_sql_generator_agent import fallback_sql_generator_agent
+    except Exception as e:
+        # If agent import fails, we'll handle it in orchestrator initialization
+        print(colored(f"⚠️  Warning: Agent import had issues: {e}", "yellow"))
+        print(colored(" Agents will be created when needed. Make sure MCP server is running.", "cyan"))
+        router_agent = None
+        customer_data_agent = None
+        support_agent = None
+        fallback_sql_generator_agent = None
+except Exception as e:
+    # Handle any other import errors (like MCP connection issues)
+    print(colored(f"⚠️  Warning: Agent creation encountered issues: {e}", "yellow"))
+    print(colored(" This is normal if MCP server isn't running yet.", "cyan"))
+    print(colored("   Agents will connect to MCP server when first used.", "cyan"))
+    # Agents might still be created, continue
+    pass
 
 
 class A2AOrchestrator:
-    """Orchestrator that routes queries to appropriate agents and coordinates multi-agent execution"""
+    """Orchestrator that coordinates multi-agent execution.
+    
+    Responsibilities:
+    - Coordinates agent execution flow
+    - Manages sessions and conversation history
+    - Passes queries to router agent for routing decisions
+    - Executes agents based on router's decisions
+    - Does NOT make routing decisions (router agent handles all routing)
+    """
     
     def __init__(self, user_id: str = "user_123", session_id: str = "session_456", handoff_callback=None):
         """
@@ -84,7 +121,8 @@ class A2AOrchestrator:
         self.user_id = user_id
         self.session_id = session_id
         self.session_service = InMemorySessionService()
-        self.handoff_callback = handoff_callback  # Callback for handoff events
+        self.handoff_callback = handoff_callback
+        self.conversation_history = []
         
         # Agent mapping
         self.agents = {
@@ -93,11 +131,9 @@ class A2AOrchestrator:
             'sql': fallback_sql_generator_agent,
         }
         
-        print(colored("✅ A2A Orchestrator initialized", "green"))
-        print(colored("   Supports single and multi-agent routing", "cyan"))
     
     def _get_session_id(self, app_name: str) -> str:
-        """Get the session ID for an app name."""
+        """Get the session ID for an agent."""
         clean_name = app_name.replace("_agent", "")
         return f"{self.session_id}_{clean_name}"
     
@@ -125,6 +161,54 @@ class A2AOrchestrator:
                 # If still fails, that's okay - Runner might create it
                 pass
             return None
+
+    def _extract_response_from_events(self, events) -> str:
+        """Extract text response from event stream."""
+        agent_response = None
+        accumulated_text = []
+        
+        try:
+            for event in events:
+                event_text = None
+                
+                # Extract text from event
+                if event.is_final_response():
+                    if hasattr(event, 'content') and event.content:
+                        if hasattr(event.content, 'parts') and event.content.parts:
+                            for part in event.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    event_text = part.text
+                                    break
+                        elif hasattr(event.content, 'text') and event.content.text:
+                            event_text = event.content.text
+                
+                if not event_text and hasattr(event, 'text') and event.text:
+                    event_text = event.text
+                
+                if not event_text and hasattr(event, 'content') and hasattr(event.content, 'text'):
+                    event_text = event.content.text
+                
+                if event_text:
+                    accumulated_text.append(event_text)
+                    if event.is_final_response():
+                        agent_response = event_text
+        except StopIteration:
+            pass
+        except (ConnectionError, TimeoutError) as e:
+            error_str = str(e).lower()
+            if 'failed to get tools' in error_str or 'connection' in error_str or 'timeout' in error_str:
+                raise ConnectionError(f"MCP server connection failed")
+            raise
+        
+        return agent_response or (" ".join(accumulated_text) if accumulated_text else None)
+    
+    def _emergency_fallback(self, query: str) -> dict:
+        """Emergency fallback only when router agent completely fails."""
+        return {
+            'next_agent': 'customer_data',
+            'done': False,
+            'reason': 'Emergency fallback: Router unavailable'
+        }
     
     def _parse_supervisor_decision(self, router_response: str) -> dict:
         """Parse the supervisor router's JSON response."""
@@ -171,186 +255,140 @@ class A2AOrchestrator:
                     'reason': 'Parsed from text response'
                 }
         
-        # Default fallback
-        print(colored("⚠️  Could not parse supervisor decision, defaulting to customer_data", "yellow"))
+        # Default fallback when router response cannot be parsed
         return {
             'next_agent': 'customer_data',
             'done': False,
-            'reason': 'Default fallback'
+            'reason': 'Could not parse router decision'
         }
     
     async def _supervisor_decide(self, query: str, previous_results: list = None) -> dict:
         """Ask supervisor router to decide next agent or if done."""
         try:
-            await self._ensure_session("router_agent")
+            # Use router_agent.name which should be "router_agent"
+            agent_app_name = router_agent.name if hasattr(router_agent, 'name') else "router_agent"
+            await self._ensure_session(agent_app_name)
             
+            # Create router runner
             router_runner = Runner(
                 agent=router_agent,
-                session_service=self.session_service,
-                app_name="router_agent"
+                app_name=agent_app_name,
+                session_service=self.session_service
             )
             
+            # Build context for router agent
+            context_parts = []
+            
+            if self.conversation_history:
+                recent_history = "\n".join([
+                    f"User: {h.get('user', '')}\nAssistant: {h.get('assistant', '')[:200]}..."
+                    for h in self.conversation_history[-3:]
+                ])
+                context_parts.append(f"PREVIOUS CONVERSATION CONTEXT:\n{recent_history}")
+            
             if previous_results:
-                # Supervisor evaluation after agent execution
                 results_summary = "\n".join([
-                    f"Agent: {r['agent']}\nResponse: {r['response'][:200]}..."
+                    f"Agent: {r['agent']}\nResponse: {r['response'][:300]}..."
                     for r in previous_results
                 ])
-                
-                supervisor_prompt = f"""EVALUATE: The following agents have executed. Determine if the query is complete or if another agent is needed.
-
-ORIGINAL USER QUERY: "{query}"
-
-PREVIOUS AGENT RESULTS:
-{results_summary}
-
-Analyze if the query is FULLY answered:
-- If YES → {{"next_agent": null, "done": true, "reason": "Query fully answered"}}
-- If NO → {{"next_agent": "agent_name", "done": false, "reason": "Still need..."}}
-
-Available agents: customer_data, support, sql
-"""
-            else:
-                # Initial routing
-                supervisor_prompt = f"""INITIAL ROUTING: Determine the FIRST agent to handle this query.
-
-USER QUERY: "{query}"
-
-Respond with JSON:
-{{"next_agent": "agent_name", "done": false, "reason": "why this agent"}}
-
-Available agents: customer_data, support, sql
-"""
+                context_parts.append(f"PREVIOUS AGENT RESULTS:\n{results_summary}")
+            
+            # Let router agent use its own instructions - just provide query and context
+            router_query = query
+            if context_parts:
+                router_query = f"{query}\n\n" + "\n\n".join(context_parts)
             
             content = types.Content(
                 role="user",
-                parts=[types.Part(text=supervisor_prompt)]
+                parts=[types.Part(text=router_query)]
             )
             
-            session_id = self._get_session_id("router_agent")
+            session_id = self._get_session_id(agent_app_name)
             
-            # Suppress cleanup errors for router too
-            import sys
-            from io import StringIO
-            old_stderr = sys.stderr
-            stderr_buffer = StringIO()
-            
-            try:
-                sys.stderr = stderr_buffer
-                events = router_runner.run(
-                    user_id=self.user_id,
-                    session_id=session_id,
-                    new_message=content
-                )
-                
-                router_response = None
-                for event in events:
-                    if event.is_final_response():
-                        router_response = event.content.parts[0].text
-                        break
-            finally:
-                sys.stderr = old_stderr
-                # Suppress known cleanup errors (same as in _execute_agent)
-                error_output = stderr_buffer.getvalue()
-                if error_output and not any(
-                    err in error_output 
-                    for err in [
-                        "Task exception was never retrieved",
-                        "Attempted to exit cancel scope in a different task",
-                        "is bound to a different event loop",
-                        "Error during disconnected session cleanup",
-                        "generator didn't stop after athrow()"
-                    ]
-                ):
-                    print(error_output, file=old_stderr)
-            
+            # Get router response
+            events = router_runner.run(
+                user_id=self.user_id,
+                session_id=session_id,
+                new_message=content
+            )
+            router_response = self._extract_response_from_events(events)
             if router_response:
-                decision = self._parse_supervisor_decision(router_response)
-                return decision
+                return self._parse_supervisor_decision(router_response)
             else:
-                raise Exception("No response from supervisor router")
+                if previous_results and len(previous_results) > 0:
+                    return {'next_agent': None, 'done': True, 'reason': 'Query answered by previous agent'}
+                return self._emergency_fallback(query)
                 
+        except (ConnectionError, TimeoutError) as e:
+            error_str = str(e).lower()
+            if 'connection' in error_str or 'timeout' in error_str or 'failed to get tools' in error_str:
+                if previous_results and len(previous_results) > 0:
+                    return {'next_agent': None, 'done': True, 'reason': 'Query answered by previous agent'}
+                return self._emergency_fallback(query)
+            raise
         except Exception as e:
-            print(colored(f"⚠️  Error in supervisor decision: {e}", "yellow"))
-            return {
-                'next_agent': 'customer_data' if not previous_results else None,
-                'done': bool(previous_results),
-                'reason': f'Error: {str(e)}'
-            }
+            if previous_results and len(previous_results) > 0:
+                return {'next_agent': None, 'done': True, 'reason': 'Query answered by previous agent'}
+            return self._emergency_fallback(query)
     
     async def _execute_agent(self, agent_name: str, query: str, conversation_history: list = None) -> str:
         """Execute a query with a specific agent."""
         agent = self.agents[agent_name]
-        app_name = f"{agent_name}_agent"
+        # Get app name from agent (should be something like "customer_data_agent", "support_agent")
+        agent_app_name = agent.name if hasattr(agent, 'name') else f"{agent_name}_agent"
         
-        await self._ensure_session(app_name)
+        await self._ensure_session(agent_app_name)
         
+        # Create runner with agent name as app_name for consistency
         runner = Runner(
             agent=agent,
-            session_service=self.session_service,
-            app_name=app_name
+            app_name=agent_app_name,
+            session_service=self.session_service
         )
         
-        # Prepare conversation history if provided
+        # Build context-aware query with conversation history
+        context_text = ""
+        if self.conversation_history:
+            recent_context = []
+            for h in self.conversation_history[-3:]:  # Last 3 exchanges
+                if h.get('user'):
+                    recent_context.append(f"Previous user message: {h['user']}")
+                if h.get('assistant'):
+                    recent_context.append(f"Previous assistant response: {h['assistant'][:300]}...")
+            
+            if recent_context:
+                context_text = f"\n\nCONVERSATION CONTEXT (for reference):\n" + "\n".join(recent_context) + "\n"
+        
+        # Include agent-specific conversation history if provided
         if conversation_history:
-            content = types.Content(
-                role="user",
-                parts=[types.Part(text=f"Previous context: {conversation_history}\n\nUser query: {query}")]
-            )
-        else:
-            content = types.Content(
-                role="user",
-                parts=[types.Part(text=query)]
-            )
+            context_text += f"\nPrevious agent results: {conversation_history}\n"
         
-        session_id = self._get_session_id(app_name)
+        # Combine query with context
+        full_query = query
+        if context_text:
+            full_query = f"{query}{context_text}\n\nIMPORTANT: Use the conversation context to understand references (e.g., 'his tickets' refers to the customer mentioned earlier)."
         
-        # Suppress cleanup errors - these happen in background and don't affect functionality
-        # The errors are from MCP connection cleanup happening in different event loops
-        import sys
-        from io import StringIO
+        content = types.Content(
+            role="user",
+            parts=[types.Part(text=full_query)]
+        )
         
-        # Capture stderr to suppress cleanup errors
-        old_stderr = sys.stderr
-        stderr_buffer = StringIO()
+        session_id = self._get_session_id(agent_app_name)
         
+        # Execute agent and get response
         try:
-            sys.stderr = stderr_buffer
             events = runner.run(
                 user_id=self.user_id,
                 session_id=session_id,
                 new_message=content
             )
-            
-            # Get response
-            agent_response = None
-            for event in events:
-                if event.is_final_response():
-                    agent_response = event.content.parts[0].text
-                    break
-            
+            agent_response = self._extract_response_from_events(events)
             return agent_response or "No response received from agent."
-        finally:
-            # Restore stderr
-            sys.stderr = old_stderr
-            
-            # Suppress known cleanup errors from background tasks
-            # These happen when MCP connections are cleaned up asynchronously
-            # They don't affect functionality but create noise
-            error_output = stderr_buffer.getvalue()
-            # Filter out known harmless cleanup errors
-            if error_output and not any(
-                err in error_output 
-                for err in [
-                    "Task exception was never retrieved",
-                    "Attempted to exit cancel scope in a different task",
-                    "is bound to a different event loop",
-                    "Error during disconnected session cleanup",
-                    "generator didn't stop after athrow()"
-                ]
-            ):
-                # Only print if it's a real error
-                print(error_output, file=old_stderr)
+        except (ConnectionError, TimeoutError) as e:
+            error_str = str(e).lower()
+            if 'failed to get tools' in error_str or 'connection' in error_str or 'timeout' in error_str:
+                raise ConnectionError(f"MCP server connection failed")
+            raise
     
     async def process_query(self, query: str, show_usage: bool = False, max_iterations: int = 5, silent: bool = False) -> str:
         """
@@ -367,11 +405,6 @@ Available agents: customer_data, support, sql
         Returns:
             The combined agent response
         """
-        if not silent:
-            print(colored("="*70, "magenta"))
-            print(colored(f"👤 USER: {query}", "cyan", attrs=["bold"]))
-            print(colored("="*70, "magenta"))
-            print()
         
         try:
             results = []
@@ -382,16 +415,8 @@ Available agents: customer_data, support, sql
             while not done and iteration < max_iterations:
                 iteration += 1
                 
-                # Ask supervisor for next decision
-                if not silent:
-                    if iteration == 1:
-                        print(colored("🎯 SUPERVISOR: Initial routing decision...", "cyan"))
-                    else:
-                        print(colored(f"🎯 SUPERVISOR: Evaluating results (iteration {iteration})...", "cyan"))
-                
                 decision = await self._supervisor_decide(query, previous_results=results if results else None)
                 
-                # Callback for routing decision
                 if self.handoff_callback and iteration == 1:
                     self.handoff_callback('routing', {
                         'query': query,
@@ -399,29 +424,18 @@ Available agents: customer_data, support, sql
                         'iteration': iteration
                     })
                 
-                if not silent:
-                    print(colored(f"   Decision: {decision['reason']}", "yellow"))
-                
-                # Check if done
                 if decision['done'] or decision['next_agent'] is None:
-                    if not silent:
-                        print(colored("   ✓ Supervisor: Query complete!", "green"))
-                    
-                    # Callback for completion
                     if self.handoff_callback:
                         self.handoff_callback('completion', {
                             'query': query,
                             'results': results,
                             'iteration': iteration
                         })
-                    
                     done = True
                     break
                 
-                # Execute next agent
                 next_agent = decision['next_agent']
                 
-                # Callback for handoff
                 if self.handoff_callback:
                     previous_agent = results[-1]['agent'] if results else None
                     self.handoff_callback('handoff', {
@@ -431,76 +445,61 @@ Available agents: customer_data, support, sql
                         'reason': decision['reason']
                     })
                 
-                if not silent:
-                    print(colored(f"   → Next agent: {next_agent}_agent", "yellow"))
-                    print()
-                
-                # Prepare query with previous context
                 if results:
                     context_query = f"""Previous agent results:
-{chr(10).join(f"- {r['agent']}_agent: {r['response'][:300]}..." for r in results)}
+{chr(10).join(f"- {r['agent']}_agent: {r['response'][:500]}..." for r in results)}
 
 Original user query: {query}
 
-Based on the previous results, continue processing the query."""
+Continue processing based on previous results."""
                 else:
                     context_query = query
                 
-                if not silent:
-                    print(colored(f"🔄 Executing: {next_agent}_agent", "cyan"))
+                try:
+                    response = await self._execute_agent(next_agent, context_query, 
+                                                         [r['response'] for r in results] if results else None)
+                except (ConnectionError, TimeoutError) as e:
+                    error_str = str(e).lower()
+                    if 'failed to get tools' in error_str or 'connection' in error_str or 'timeout' in error_str:
+                        response = f"Error: MCP server connection failed. Ensure server is running at {MCP_HTTP_BASE_URL}/mcp"
+                        results.append({'agent': next_agent, 'response': response})
+                        done = True
+                        break
+                    raise
                 
-                response = await self._execute_agent(next_agent, context_query, 
-                                                     [r['response'] for r in results] if results else None)
+                results.append({'agent': next_agent, 'response': response})
                 
-                results.append({
-                    'agent': next_agent,
-                    'response': response
-                })
-                
-                # Callback for agent completion
                 if self.handoff_callback:
                     self.handoff_callback('agent_complete', {
                         'agent': next_agent,
                         'response_preview': response[:100] + "..." if len(response) > 100 else response,
                         'iteration': iteration
                     })
-                
-                if not silent:
-                    print(colored(f"   ✓ {next_agent}_agent completed", "green"))
-                    print()
             
-            # Safety check for max iterations
             if iteration >= max_iterations and not done:
                 if not silent:
-                    print(colored(f"⚠️  Reached max iterations ({max_iterations}), stopping", "yellow"))
-                    print()
+                    print(colored(f"⚠️  Max iterations reached ({max_iterations})", "yellow"))
             
-            # Combine and return results
             if len(results) == 1:
                 final_response = results[0]['response']
-                if not silent:
-                    print(colored("🤖 FINAL RESPONSE:", "green", attrs=["bold"]))
-                    print(final_response)
-                    print()
-                return final_response
             else:
-                combined_response = "\n\n".join([
-                    f"**{r['agent'].replace('_', ' ').title()} Agent:**\n{r['response']}"
+                final_response = "\n\n".join([
+                    f"{r['agent'].replace('_', ' ').title()} Agent:\n{r['response']}"
                     for r in results
                 ])
-                if not silent:
-                    print(colored("🤖 FINAL COMBINED RESPONSE:", "green", attrs=["bold"]))
-                    print(combined_response)
-                    print()
-                return combined_response
+            
+            self.conversation_history.append({
+                'user': query,
+                'assistant': final_response
+            })
+            
+            if len(self.conversation_history) > 10:
+                self.conversation_history = self.conversation_history[-10:]
+            
+            return final_response
             
         except Exception as e:
-            error_msg = f"❌ Error processing query: {e}"
-            print(colored(error_msg, "red"))
-            import traceback
-            traceback.print_exc()
-            print()
-            return error_msg
+            return f"Error: {str(e)}"
 
 
 # Create a default orchestrator instance
@@ -513,7 +512,7 @@ def get_orchestrator() -> A2AOrchestrator:
         _orchestrator = A2AOrchestrator()
     return _orchestrator
 
-async def process(query: str, thread_id: str = "default", show_usage: bool = False, silent: bool = False) -> str:
+async def process(query: str, thread_id: str = "default", show_usage: bool = False, silent: bool = False, handoff_callback=None) -> str:
     """
     Convenience function to process a query.
     
@@ -524,11 +523,15 @@ async def process(query: str, thread_id: str = "default", show_usage: bool = Fal
         query: The user's query
         thread_id: Thread ID for conversation continuity
         show_usage: Whether to show token usage statistics
+        silent: Whether to suppress output
+        handoff_callback: Optional callback for handoff events
         
     Returns:
         The agent's response
     """
-    orchestrator = get_orchestrator(handoff_callback=handoff_callback)
+    orchestrator = get_orchestrator()
+    if handoff_callback:
+        orchestrator.handoff_callback = handoff_callback
     orchestrator.session_id = thread_id
     orchestrator.user_id = f"user_{thread_id}"
     return await orchestrator.process_query(query, show_usage, silent=silent)
@@ -540,8 +543,8 @@ ask_agent = process
 if __name__ == "__main__":
     import asyncio
     
-    print(colored("🚀 A2A-MCP Orchestrator (Google ADK)", "cyan", attrs=["bold"]))
-    print(colored(f"💡 Note: Make sure MCP server is running at {MCP_HTTP_BASE_URL}", "yellow"))
+    print(colored(" A2A-MCP Orchestrator (Google ADK)", "cyan", attrs=["bold"]))
+    print(colored(f" Note: Make sure MCP server is running at {MCP_HTTP_BASE_URL}", "yellow"))
     print()
     
     async def main():
@@ -561,10 +564,10 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print(colored("\n🛑 Interrupted by user", "yellow"))
+        print(colored("\n Interrupted by user", "yellow"))
     except Exception as e:
         print(colored(f"\n❌ Error: {e}", "red"))
-        print(colored("💡 Make sure:", "yellow"))
+        print(colored(" Make sure:", "yellow"))
         print(colored("   1. MCP server is running: python customer_mcp/server/mcp_server.py", "yellow"))
         print(colored("   2. API keys are set in .env file", "yellow"))
         sys.exit(1)

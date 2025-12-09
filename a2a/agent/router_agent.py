@@ -4,13 +4,8 @@ Router Agent - Routes user queries to the appropriate specialized agent
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
-from termcolor import colored # this is used to color the output in the terminal
-
 from ..utils import MCP_HTTP_BASE_URL, ROUTER_MODEL
 
-print(colored("🔧 Creating ADK Agent with MCP tools...", "cyan"))
-
-# Create the agent
 router_agent = LlmAgent(
     model=ROUTER_MODEL,
     name="router_agent",
@@ -85,12 +80,3 @@ IMPORTANT:
 - Choose next_agent based on what's still missing from the original query
 """
 )
-
-print(colored("✅ Agent created successfully!", "green", attrs=["bold"]))
-print()
-print(colored("Agent Details:", "cyan"))
-print(f"   Name: {router_agent.name}")
-print(f"   Model: {ROUTER_MODEL}")
-print(f"   Tools: MCPToolSet connected to {MCP_HTTP_BASE_URL}/mcp")
-print()
-print(colored("💡 The agent can now use all router tools!", "yellow"))

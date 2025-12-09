@@ -95,7 +95,9 @@ def chatbot_session():
         print(colored(f"💡 Make sure MCP server is running at {MCP_HTTP_BASE_URL}", "yellow"))
         return
     
-    conversation_count = 0
+    # Keep same session across queries for context continuity
+    session_id = f"chat_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    user_id = "chat_user"
     
     while True:
         try:
@@ -112,8 +114,11 @@ def chatbot_session():
             
             if user_input.lower() == 'clear':
                 print(colored("\n🔄 Conversation history cleared\n", "yellow"))
-                orchestrator = A2AOrchestrator(handoff_callback=handoff_display_callback)
-                conversation_count = 0
+                orchestrator = A2AOrchestrator(
+                    user_id=user_id,
+                    session_id=session_id,
+                    handoff_callback=handoff_display_callback
+                )
                 continue
             
             if user_input.lower() in ['help', '?']:
@@ -128,16 +133,14 @@ def chatbot_session():
                 continue
             
             # Process the query
-            conversation_count += 1
             print(colored("   💭 Thinking...", "yellow"))
             
             try:
                 import asyncio
-                # Use silent mode but show handoffs via callback
-                # Update orchestrator callback for this query
+                # Use same session for context continuity
                 orchestrator.handoff_callback = handoff_display_callback
-                orchestrator.session_id = "chat_session"
-                orchestrator.user_id = f"user_chat_{conversation_count}"
+                orchestrator.session_id = session_id
+                orchestrator.user_id = user_id
                 
                 response = asyncio.run(orchestrator.process_query(user_input, show_usage=False, silent=True))
                 

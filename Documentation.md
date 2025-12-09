@@ -2,6 +2,7 @@
 
 ## Multi-Agent Customer Support System using Google ADK and MCP Protocol
 
+A production-ready multi-agent customer support system featuring Google ADK, FastMCP server, intelligent agent routing, and an interactive chatbot interface.
 ---
 
 ## Table of Contents

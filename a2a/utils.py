@@ -2,13 +2,22 @@
 Utilities and Configuration for A2A-MCP System
 """
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
-import customer_mcp.server.mcp_server
+
+# Suppress import-time errors from MCP server module
+# (We only need the module for reference, not to run it)
+try:
+    import customer_mcp.server.mcp_server
+except Exception:
+    # Ignore errors during import - server should be run separately
+    pass
+
 try:
     load_dotenv()
 except (FileNotFoundError, PermissionError) as e:
-    print(f"Warning: Could not load .env file ({e}). Using environment variables.")
+    pass  # Silent - using environment variables is fine
 
 # MCP Server HTTP Configuration
 MCP_HTTP_HOST = os.getenv('MCP_HTTP_HOST', 'localhost')

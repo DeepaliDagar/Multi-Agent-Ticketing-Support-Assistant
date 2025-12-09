@@ -4,7 +4,6 @@ Uses MCP server for dynamic tool discovery
 """
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
-from termcolor import colored # this is used to color the output in the terminal    
 from a2a.utils import MCP_HTTP_BASE_URL, CUSTOMER_DATA_MODEL
 
 customer_data_agent = LlmAgent(
@@ -28,12 +27,3 @@ AGENT-TO-AGENT (A2A) COORDINATION:
 When you need ticket information or complex SQL queries, check agent cards to see who can help.
 """
 )
-
-print(colored("✅ Agent created successfully!", "green", attrs=["bold"]))
-print()
-print(colored("Agent Details:", "cyan"))
-print(f"   Name: {customer_data_agent.name}")
-print(f"   Model: {CUSTOMER_DATA_MODEL}")
-print(f"   Tools: MCPToolSet connected to {MCP_HTTP_BASE_URL}/mcp")
-print()
-print(colored("💡 The agent can now use all customer data tools!", "yellow"))

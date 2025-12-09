@@ -5,13 +5,8 @@ Uses MCP server for dynamic tool discovery
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
-from termcolor import colored
-
 from a2a.utils import MCP_HTTP_BASE_URL, SUPPORT_MODEL
 
-print(colored("🔧 Creating ADK Agent with MCP tools...", "cyan"))
-
-# Create the agent
 support_agent = LlmAgent(
     model=SUPPORT_MODEL,
     name="support_agent",
@@ -59,12 +54,4 @@ When you need information you don't have access to, use ask_agent to request hel
 """
 )
 
-print(colored("✅ Agent created successfully!", "green", attrs=["bold"]))
-print()
-print(colored("Agent Details:", "cyan"))
-print(f"   Name: {support_agent.name}")
-print(f"   Model: {SUPPORT_MODEL}")
-print(f"   Tools: MCPToolSet connected to {MCP_HTTP_BASE_URL}/mcp")
-print()
-print(colored("💡 The agent can now use all support tools!", "yellow"))
 

@@ -128,7 +128,7 @@ For comprehensive documentation including:
 - Technical implementation details
 - Design decisions and rationale
 
-See **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)**
+See **[Documentation.md](Documentation.md)**
 
 ## MCP Inspector
 
@@ -160,6 +160,10 @@ Example queries:
 - "Create a ticket for customer 5 with issue 'Cannot login'"
 - "Get customer 3 and their tickets"
 - "Show customers who created accounts last month"
+
+**Context-aware examples:**
+- "Get customer 3" → "Show his tickets" (system remembers customer 3 from previous query)
+- "Get customer 1" → "Create a ticket for them" (system understands "them" refers to customer 1)
 
 ### Using Orchestrator Directly
 
@@ -209,6 +213,26 @@ The system implements a **Supervisor Agent Architecture**:
 5. **Iteration** → Steps 2-4 repeat until query is fully answered
 6. **Response** → Orchestrator combines results and returns to user
 
+### Conversation Context Management
+
+The system maintains conversation history using a hybrid approach:
+
+**Google ADK's Built-in Session Management:**
+- `Runner.run()` with `InMemorySessionService` automatically maintains conversation history per session
+- Each agent (router, customer_data, support, sql) has its own session, so ADK maintains isolated history per agent
+- Within each agent's session, ADK automatically includes previous messages when using the same `session_id` and `user_id`
+
+**Cross-Agent Context Management (Custom):**
+- The orchestrator maintains `conversation_history` for cross-agent context awareness
+- Last 10 user-assistant exchanges are stored for reference across agent boundaries
+- This allows agents to understand context from other agents (e.g., when router routes to support, support knows what customer_data found)
+- Context-aware routing: Router agent receives conversation context to handle references (e.g., "his tickets" referring to a customer mentioned earlier)
+- Context-aware execution: Agents receive full conversation context including previous messages and results from other agents
+
+**Why Both?**
+- ADK's session management: Provides automatic history within each agent's session
+- Custom tracking: Enables cross-agent context sharing needed for multi-agent orchestration
+
 ### Example Flow
 
 ```
@@ -223,7 +247,7 @@ User: "Get customer 1 and create a ticket"
 7. Response → Combined result returned
 ```
 
-For detailed execution flows and technical deep dives, see [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md).
+For detailed execution flows and technical deep dives, see [Documentation.md](Documentation.md).
 
 ## Troubleshooting
 
@@ -275,9 +299,10 @@ googleadk/
 ├── database/                    # Database setup
 │   └── database_setup.py
 ├── chatbot.py                   # Interactive chatbot interface
+├── test.py                      # Test script for all scenarios
 ├── requirements.txt             # Python dependencies
 ├── README.md                    # This file (high-level overview)
-└── PROJECT_DOCUMENTATION.md     # Comprehensive documentation
+└── Documentation.md             # Comprehensive documentation
 ```
 
 ## References
@@ -291,4 +316,25 @@ googleadk/
 
 **Built with**: Google ADK, FastMCP, LiteLLM, SQLite, Python
 
-**For detailed technical documentation**, see [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)
+**For detailed technical documentation**, see [Documentation.md](Documentation.md)
+
+## Testing
+
+Run the test suite with all 8 scenarios:
+
+```bash
+# Terminal output (colored)
+python test.py
+
+# HTML report
+python test.py --html
+
+# Custom HTML filename
+python test.py --html --output my_results.html
+```
+
+The test script includes:
+- 8 comprehensive test scenarios
+- A2A coordination visualization
+- Execution time tracking
+- Pass/Fail summary

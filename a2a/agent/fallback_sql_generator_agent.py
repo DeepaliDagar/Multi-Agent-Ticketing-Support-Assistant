@@ -6,7 +6,6 @@ Uses MCP server for dynamic tool discovery
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
-from termcolor import colored
 from a2a.utils import MCP_HTTP_BASE_URL, SQL_GENERATOR_MODEL
 
 DATABASE_SCHEMA = """
@@ -27,45 +26,27 @@ fallback_sql_generator_agent = LlmAgent(
             )
         )
     ],
-    instruction=f"""You are a FALLBACK SQL generator assistant.
+    instruction=f"""You are a SQL assistant that executes queries and displays actual results.
 
 {DATABASE_SCHEMA}
 
- IMPORTANT: You should ONLY be used for complex queries that cannot be handled by other agents!
+CRITICAL INSTRUCTIONS:
+1. ALWAYS use the fallback_sql tool to execute SQL queries
+2. ALWAYS display the ACTUAL RESULTS from the tool response
+3. Show all rows with complete data (names, emails, IDs, dates, etc.)
+4. Format results clearly - list each row with all relevant details
+5. DO NOT just say "executed successfully" - show the actual data!
 
-Your task:
-1. Convert complex natural language queries into SQL
-2. Only give me the SQL query, no other text or explanation
-3. Only generate SELECT, INSERT, or UPDATE queries (no DELETE, DROP, CREATE TABLE, etc.)
-4. Use proper SQL syntax for SQLite
-5. Prefer SIMPLE queries - let other agents handle relationships via A2A coordination
-6. AVOID JOINS when possible - customer_data and support agents can coordinate
+When the tool returns results, format them like this:
+"Found 3 customers created last month:
+1. ID: 1, Name: Alice Williams, Email: alice@example.com, Status: Active, Created: 2025-11-15
+2. ID: 2, Name: Bob Johnson, Email: bob@example.com, Status: Active, Created: 2025-11-20
+3. ID: 3, Name: Charlie Brown, Email: charlie@example.com, Status: Disabled, Created: 2025-11-25"
 
-WHEN TO USE SQL:
-Name pattern matching (LIKE 'A%')
-Date range filtering (created_at > date(...))
-Aggregations (COUNT, SUM, AVG)
-Complex WHERE conditions and joins
-
-WHEN NOT TO USE SQL (other agents handle these):
-Get customer by ID → customer_data agent
-Customer + tickets → customer_data + support agents via A2A
-
-Examples of what YOU should handle:
-- "Find customers whose name starts with 'A'" → SELECT * FROM customers WHERE name LIKE 'A%'
-- "Get customers created in last 30 days" → SELECT * FROM customers WHERE created_at >= date('now','-30 days')
-- "Count tickets by priority" → SELECT priority, COUNT(*) FROM tickets GROUP BY priority
+Always show the complete data from the tool response!
 """
 )
 
-print(colored("✅ Agent created successfully!", "green", attrs=["bold"]))
-print()
-print(colored("Agent Details:", "cyan"))
-print(f"   Name: {fallback_sql_generator_agent.name}")
-print(f"   Model: {SQL_GENERATOR_MODEL}")
-print(f"   Tools: MCPToolSet connected to {MCP_HTTP_BASE_URL}/mcp")
-print()
-print(colored("💡 The agent can now use all SQL generator tools!", "yellow"))
 
 
 
